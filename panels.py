@@ -1776,10 +1776,10 @@ def render_panel_6_analysis() -> None:
             else:
                 st.info(MESSAGES["upload_first"])
         with compressed_col:
-            st.markdown("##### Compressed")
+            st.markdown("##### Compressed/Encoded")
             if stored_path and stored_bytes:
                 stored_preview = _previewable_payload_path(stored_path, stored_bytes, "summary_compressed") or stored_path
-                preview_file(stored_preview, "Compressed preview", show_caption=False)
+                preview_file(stored_preview, "Compressed/Encoded preview", show_caption=False)
                 _render_property_table(_pipeline_file_metric_rows(stored_path, stored_bytes, compressed=True))
             else:
                 st.info(MESSAGES["run_data_encoding_first"])

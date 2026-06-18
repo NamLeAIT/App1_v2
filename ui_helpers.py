@@ -15,6 +15,8 @@ import zlib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import mimetypes
+import base64
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -432,6 +434,35 @@ def _preview_office_document(path: str, kind: str, title: str) -> None:
     except Exception as exc:
         st.info(f"Document preview is not available: {exc}")
 
+def _render_natural_image_preview(path: str, ext: str) -> None:
+    raw = Path(path).read_bytes()
+    mime = mimetypes.guess_type(path)[0] or "image/png"
+
+    # TIFF thường browser không hiển thị trực tiếp tốt, nên để Streamlit xử lý.
+    if ext.lower() in {".tif", ".tiff"}:
+        st.image(path, use_container_width=False)
+        return
+
+    encoded = base64.b64encode(raw).decode("ascii")
+    st.markdown(
+        f"""
+<div style="width: 100%; display: flex; justify-content: center;">
+  <img
+    src="data:{mime};base64,{encoded}"
+    style="
+      width: auto;
+      height: auto;
+      min-width: 50%;
+      max-width: 100%;
+      object-fit: contain;
+      display: block;
+    "
+  />
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
 def preview_file(path: Optional[str], title: str = "Preview", show_caption: bool = False) -> None:
     st.markdown(f"#### {title}")
     if not path or not os.path.exists(path):
@@ -447,11 +478,7 @@ def preview_file(path: Optional[str], title: str = "Preview", show_caption: bool
 
     try:
         if kind in IMAGE_KINDS or ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}:
-            st.image(
-                path,
-                use_container_width=IMAGE_PREVIEW_USE_CONTAINER_WIDTH,
-                width=None if IMAGE_PREVIEW_USE_CONTAINER_WIDTH else IMAGE_PREVIEW_WIDTH,
-            )
+            _render_natural_image_preview(path, ext)
         elif kind in AUDIO_KINDS or ext in _BROWSER_AUDIO_EXTS:
             st.audio(path)
         elif kind in VIDEO_KINDS or ext in _VIDEO_EXTS:

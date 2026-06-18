@@ -20,9 +20,9 @@ from panels import (
 APP_STEPS = [
     (1, PANEL_TITLES["input"]),
     (2, PANEL_TITLES["data_encoding"]),
-    (3, PANEL_TITLES["dna_encoding"]),
+    (3, "Encoding"),
     (4, PANEL_TITLES["strand_preparation"]),
-    (5, PANEL_TITLES["file_decoding"]),
+    (5, "Decoding"),
     (6, PANEL_TITLES["validation"]),
 ]
 
@@ -48,8 +48,8 @@ def _render_hero() -> None:
     st.markdown(
         """
 <div class="hero-card">
-  <div class="hero-title">🧬 DNA Storage Pipeline</div>
-  <div class="hero-subtitle">Compression-aware DNA encoding, strand preparation, decoding, and validation.</div>
+  <div class="hero-title"><br/>🧬 DNA Data Storage System</div>
+  <div class="hero-subtitle"></div>
 </div>
 """,
         unsafe_allow_html=True,

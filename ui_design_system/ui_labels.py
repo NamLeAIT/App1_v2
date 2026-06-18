@@ -17,7 +17,7 @@ PANEL_TITLES = {
     "error_simulation": "Error Simulation",
     "read_recovery": "Read Recovery",
     "file_decoding": "File Decoding",
-    "validation": "Validation",
+    "validation": "Report",
 }
 
 STEPPER = [

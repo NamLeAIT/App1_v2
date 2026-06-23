@@ -27,7 +27,9 @@ APP_STEPS = [
 def _has_meaningful_value(key: str) -> bool:
     """
     Return True when a session_state key exists and contains useful data.
-    This avoids errors from DataFrame/custom objects with ambiguous boolean values.
+
+    This avoids errors from pandas DataFrame or custom objects whose boolean
+    value can be ambiguous.
     """
     if key not in st.session_state:
         return False
@@ -107,12 +109,12 @@ def _step_state(step_no: int) -> tuple[str, str]:
 
 
 def _render_compact_overrides() -> None:
-    """Small spacing overrides for the single-page app."""
-    if st.session_state.get("_compact_overrides_applied"):
-        return
+    """
+    Small spacing overrides for the single-page app.
 
-    st.session_state["_compact_overrides_applied"] = True
-
+    This CSS is intentionally rendered on every Streamlit rerun.
+    Do not cache it with session_state.
+    """
     st.markdown(
         """
 <style>
@@ -134,15 +136,10 @@ def _apply_pipeline_status_style() -> None:
     """
     Fixed status bar style.
 
-    This uses position: fixed instead of position: sticky because Streamlit
-    markdown blocks can wrap the status bar in a short parent container.
-    Sticky is limited by its parent container; fixed stays visible while scrolling.
+    Important: this CSS is rendered on every Streamlit rerun. Streamlit rebuilds
+    the page after upload/compression/encoding/decoding interactions, so caching
+    this CSS with session_state can make the fixed status bar disappear.
     """
-    if st.session_state.get("_pipeline_status_style_applied"):
-        return
-
-    st.session_state["_pipeline_status_style_applied"] = True
-
     st.markdown(
         """
 <style>
@@ -157,12 +154,22 @@ def _apply_pipeline_status_style() -> None:
   backdrop-filter: blur(10px);
   border: 1px solid #e5e7eb;
   border-radius: 16px;
-  padding: 0.55rem;
+  padding: 0.62rem 0.65rem 0.6rem 0.65rem;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
 }
 
+.pipeline-fixed-title {
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  margin: 0 0 0.48rem 0;
+  line-height: 1.15;
+}
+
 .pipeline-status-spacer {
-  height: 82px;
+  height: 112px;
 }
 
 .pipeline-steps {
@@ -274,7 +281,7 @@ def _apply_pipeline_status_style() -> None:
   }
 
   .pipeline-status-spacer {
-    height: 142px;
+    height: 172px;
   }
 }
 
@@ -284,12 +291,16 @@ def _apply_pipeline_status_style() -> None:
     top: 0.35rem;
   }
 
+  .pipeline-fixed-title {
+    font-size: 0.95rem;
+  }
+
   .pipeline-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .pipeline-status-spacer {
-    height: 205px;
+    height: 235px;
   }
 }
 </style>
@@ -298,21 +309,13 @@ def _apply_pipeline_status_style() -> None:
     )
 
 
-def _render_hero() -> None:
-    st.markdown(
-        """
-<div class="hero-card">
-  <div class="hero-title">🧬 DNA Storage Pipeline</div>
-  <div class="hero-subtitle">Compression-aware DNA encoding, strand design, decoding, and summarization.</div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-
-
 def _render_pipeline_status() -> None:
-    """Render the fixed six-step status bar."""
-    parts = ['<div class="pipeline-fixed"><div class="pipeline-steps">']
+    """Render the fixed title and six-step status bar."""
+    parts = [
+        '<div class="pipeline-fixed">',
+        '<div class="pipeline-fixed-title">DNA Data Storage System</div>',
+        '<div class="pipeline-steps">',
+    ]
 
     for number, label in APP_STEPS:
         css_class, state_text = _step_state(number)
@@ -338,11 +341,7 @@ def render_app() -> None:
     apply_app_style()
     _render_compact_overrides()
     _apply_pipeline_status_style()
-
-    # Render status first because it is fixed at the top.
-    # The spacer below it prevents the hero/panels from being hidden underneath.
     _render_pipeline_status()
-    _render_hero()
 
     render_panel_1_upload()
     render_panel_2_compression()

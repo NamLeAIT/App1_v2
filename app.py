@@ -131,7 +131,13 @@ h1, h2, h3, h4 {
 
 
 def _apply_pipeline_status_style() -> None:
-    """Sticky status bar style."""
+    """
+    Fixed status bar style.
+
+    This uses position: fixed instead of position: sticky because Streamlit
+    markdown blocks can wrap the status bar in a short parent container.
+    Sticky is limited by its parent container; fixed stays visible while scrolling.
+    """
     if st.session_state.get("_pipeline_status_style_applied"):
         return
 
@@ -140,17 +146,23 @@ def _apply_pipeline_status_style() -> None:
     st.markdown(
         """
 <style>
-.pipeline-sticky {
-  position: sticky;
+.pipeline-fixed {
+  position: fixed;
   top: 0.55rem;
-  z-index: 999;
-  background: rgba(255, 255, 255, 0.96);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1280px, calc(100vw - 3rem));
+  z-index: 999999;
+  background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(10px);
   border: 1px solid #e5e7eb;
   border-radius: 16px;
   padding: 0.55rem;
-  margin: 0.55rem 0 1rem 0;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.pipeline-status-spacer {
+  height: 82px;
 }
 
 .pipeline-steps {
@@ -253,18 +265,31 @@ def _apply_pipeline_status_style() -> None:
 }
 
 @media (max-width: 1100px) {
+  .pipeline-fixed {
+    width: calc(100vw - 2rem);
+  }
+
   .pipeline-steps {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .pipeline-status-spacer {
+    height: 142px;
   }
 }
 
 @media (max-width: 700px) {
-  .pipeline-sticky {
-    position: static;
+  .pipeline-fixed {
+    width: calc(100vw - 1rem);
+    top: 0.35rem;
   }
 
   .pipeline-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pipeline-status-spacer {
+    height: 205px;
   }
 }
 </style>
@@ -286,8 +311,8 @@ def _render_hero() -> None:
 
 
 def _render_pipeline_status() -> None:
-    """Render the sticky six-step status bar."""
-    parts = ['<div class="pipeline-sticky"><div class="pipeline-steps">']
+    """Render the fixed six-step status bar."""
+    parts = ['<div class="pipeline-fixed"><div class="pipeline-steps">']
 
     for number, label in APP_STEPS:
         css_class, state_text = _step_state(number)
@@ -303,7 +328,7 @@ def _render_pipeline_status() -> None:
 """
         )
 
-    parts.append("</div></div>")
+    parts.append("</div></div><div class='pipeline-status-spacer'></div>")
     st.markdown("".join(parts), unsafe_allow_html=True)
 
 
@@ -313,8 +338,11 @@ def render_app() -> None:
     apply_app_style()
     _render_compact_overrides()
     _apply_pipeline_status_style()
-    _render_hero()
+
+    # Render status first because it is fixed at the top.
+    # The spacer below it prevents the hero/panels from being hidden underneath.
     _render_pipeline_status()
+    _render_hero()
 
     render_panel_1_upload()
     render_panel_2_compression()

@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+import importlib
+from typing import Callable, Optional
+
 import streamlit as st
 
-from config import APP_TITLE
-from ui_design_system.streamlit_style import apply_app_style
-from panels import (
-    render_panel_1_upload,
-    render_panel_2_compression,
-    render_panel_3_encoding,
-    render_panel_4_experiment,
-    render_panel_5_decoding,
-    render_panel_6_analysis,
-)
+
+try:
+    from config import APP_TITLE
+except Exception:
+    APP_TITLE = "Compression-Aware DNA Storage Pipeline"
+
+
+try:
+    from ui_design_system.streamlit_style import apply_app_style
+except Exception:
+    try:
+        from styles import apply_style as apply_app_style
+    except Exception:
+        def apply_app_style() -> None:
+            return
 
 
 APP_STEPS = [
@@ -24,60 +32,103 @@ APP_STEPS = [
 ]
 
 
-def _has_meaningful_value(key: str) -> bool:
-    """
-    Return True when a session_state key exists and contains useful data.
+def _has_any_session_key(*keys: str) -> bool:
+    """Return True if any listed session_state key exists with meaningful content."""
+    for key in keys:
+        if key not in st.session_state:
+            continue
 
-    This avoids errors from pandas DataFrame or custom objects whose boolean
-    value can be ambiguous.
-    """
-    if key not in st.session_state:
-        return False
+        value = st.session_state.get(key)
 
-    value = st.session_state.get(key)
+        if value is None:
+            continue
 
-    if value is None:
-        return False
+        try:
+            if isinstance(value, (bytes, bytearray, str, list, tuple, dict, set)):
+                if len(value) > 0:
+                    return True
+                continue
+        except Exception:
+            pass
 
-    if isinstance(value, (bytes, bytearray, str, list, tuple, dict, set)):
-        return len(value) > 0
+        # DataFrame, dataclass, pathlib Path, compression candidate objects, etc.
+        try:
+            if bool(value):
+                return True
+        except Exception:
+            return True
 
-    try:
-        return bool(value)
-    except Exception:
-        return True
+    return False
 
 
 def _decode_successful() -> bool:
     """
-    Decode is successful only when decoded data and restored file info exist,
-    and no decode error is currently stored.
+    Decode is considered complete when decoded/restored output exists
+    and no decode error is stored.
     """
     if st.session_state.get("decode_error"):
         return False
 
-    decoded_data_exists = (
-        "decoded_data" in st.session_state
-        and st.session_state.get("decoded_data") is not None
+    return _has_any_session_key(
+        "decoded_data",
+        "restored_info",
+        "restored_file_path",
+        "decoded_file_path",
+        "decoded_output_path",
+        "decoded_bytes",
+        "restored_bytes",
     )
-    restored_info_exists = _has_meaningful_value("restored_info")
-
-    return decoded_data_exists and restored_info_exists
 
 
 def _pipeline_checks() -> dict[int, bool]:
     """
-    Check whether each visible pipeline step has completed.
+    Flexible session-state checks for the three-tab app.
 
-    Step 6 is automatic. Summarization becomes Done when Decoding succeeds.
+    Step 6 is automatic. Once step 5 Decoding is complete,
+    step 6 Summarization is also complete because the summary/report panel
+    is generated from the decode result.
     """
     decoded_ok = _decode_successful()
 
     return {
-        1: _has_meaningful_value("input_bytes"),
-        2: _has_meaningful_value("stored_bytes"),
-        3: _has_meaningful_value("dna"),
-        4: _has_meaningful_value("strand_rows"),
+        1: _has_any_session_key(
+            "input_bytes",
+            "uploaded_bytes",
+            "original_bytes",
+            "source_bytes",
+            "file_bytes",
+            "input_file_path",
+            "uploaded_file_path",
+            "original_file_path",
+            "uploaded_file",
+        ),
+        2: _has_any_session_key(
+            "stored_bytes",
+            "compressed_bytes",
+            "selected_candidate",
+            "compression_candidates",
+            "stored_file_path",
+            "compressed_file_path",
+            "storage_method",
+            "compression_result",
+        ),
+        3: _has_any_session_key(
+            "dna",
+            "encoded_dna",
+            "dna_payload",
+            "dna_sequence",
+            "bits",
+            "codec_meta",
+            "encoded_metadata",
+        ),
+        4: _has_any_session_key(
+            "strand_rows",
+            "strands",
+            "designed_strands",
+            "strand_table",
+            "strand_csv",
+            "ngs_fragments",
+        ),
         5: decoded_ok,
         6: decoded_ok,
     }
@@ -85,12 +136,11 @@ def _pipeline_checks() -> dict[int, bool]:
 
 def _step_state(step_no: int) -> tuple[str, str]:
     """
-    Return CSS class and visible status text.
-
-    Done    = the step output exists.
-    Next    = this is the first incomplete step after all previous steps are done.
-    Waiting = previous requirements are missing.
-    Review  = decoding failed and needs user attention.
+    Visible statuses:
+    - Done: the stage output exists.
+    - Next: the first incomplete stage after all previous stages are done.
+    - Waiting: prerequisites are missing.
+    - Review: decoding failed.
     """
     checks = _pipeline_checks()
 
@@ -110,21 +160,28 @@ def _step_state(step_no: int) -> tuple[str, str]:
 
 def _render_compact_overrides() -> None:
     """
-    Small spacing overrides for the single-page app.
-
-    This CSS is intentionally rendered on every Streamlit rerun.
-    Do not cache it with session_state.
+    Compact UI overrides for the tab version.
+    This is safe even if your design system already has styling.
     """
+    if st.session_state.get("_compact_overrides_applied"):
+        return
+
+    st.session_state["_compact_overrides_applied"] = True
+
     st.markdown(
         """
 <style>
 .block-container {
-  padding-top: 1.15rem;
+  padding-top: 1.2rem;
   padding-bottom: 2rem;
 }
 
 h1, h2, h3, h4 {
   letter-spacing: -0.02em;
+}
+
+[data-testid="stVerticalBlock"] {
+  gap: 0.75rem;
 }
 </style>
 """,
@@ -133,43 +190,26 @@ h1, h2, h3, h4 {
 
 
 def _apply_pipeline_status_style() -> None:
-    """
-    Fixed status bar style.
+    """Sticky six-step pipeline status style."""
+    if st.session_state.get("_pipeline_status_style_applied"):
+        return
 
-    Important: this CSS is rendered on every Streamlit rerun. Streamlit rebuilds
-    the page after upload/compression/encoding/decoding interactions, so caching
-    this CSS with session_state can make the fixed status bar disappear.
-    """
+    st.session_state["_pipeline_status_style_applied"] = True
+
     st.markdown(
         """
 <style>
-.pipeline-fixed {
-  position: fixed;
+.pipeline-sticky {
+  position: sticky;
   top: 0.55rem;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(1280px, calc(100vw - 3rem));
-  z-index: 999999;
-  background: rgba(255, 255, 255, 0.97);
+  z-index: 999;
+  background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(10px);
   border: 1px solid #e5e7eb;
   border-radius: 16px;
-  padding: 0.62rem 0.65rem 0.6rem 0.65rem;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
-}
-
-.pipeline-fixed-title {
-  text-align: center;
-  font-size: 1.05rem;
-  font-weight: 850;
-  letter-spacing: -0.02em;
-  color: #0f172a;
-  margin: 0 0 0.48rem 0;
-  line-height: 1.15;
-}
-
-.pipeline-status-spacer {
-  height: 112px;
+  padding: 0.55rem;
+  margin: 0.55rem 0 1rem 0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
 
 .pipeline-steps {
@@ -272,35 +312,18 @@ def _apply_pipeline_status_style() -> None:
 }
 
 @media (max-width: 1100px) {
-  .pipeline-fixed {
-    width: calc(100vw - 2rem);
-  }
-
   .pipeline-steps {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .pipeline-status-spacer {
-    height: 172px;
   }
 }
 
 @media (max-width: 700px) {
-  .pipeline-fixed {
-    width: calc(100vw - 1rem);
-    top: 0.35rem;
-  }
-
-  .pipeline-fixed-title {
-    font-size: 0.95rem;
+  .pipeline-sticky {
+    position: static;
   }
 
   .pipeline-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .pipeline-status-spacer {
-    height: 235px;
   }
 }
 </style>
@@ -309,13 +332,31 @@ def _apply_pipeline_status_style() -> None:
     )
 
 
+def _render_hero() -> None:
+    st.markdown(
+        """
+<div style="
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 0.7rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+">
+  <div style="font-size: 1.45rem; font-weight: 850; color: #0f172a;">
+    🧬 DNA Storage Pipeline
+  </div>
+  <div style="font-size: 0.95rem; color: #475569; margin-top: 0.25rem;">
+    Compression, DNA encoding, strand design, decoding, and summarization.
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_pipeline_status() -> None:
-    """Render the fixed title and six-step status bar."""
-    parts = [
-        '<div class="pipeline-fixed">',
-        '<div class="pipeline-fixed-title">DNA Data Storage System</div>',
-        '<div class="pipeline-steps">',
-    ]
+    """Render sticky six-step status."""
+    parts = ['<div class="pipeline-sticky"><div class="pipeline-steps">']
 
     for number, label in APP_STEPS:
         css_class, state_text = _step_state(number)
@@ -331,8 +372,95 @@ def _render_pipeline_status() -> None:
 """
         )
 
-    parts.append("</div></div><div class='pipeline-status-spacer'></div>")
+    parts.append("</div></div>")
     st.markdown("".join(parts), unsafe_allow_html=True)
+
+
+def _find_callable(function_name: str, module_names: list[str]) -> Optional[Callable[[], None]]:
+    """
+    Try to load a branch-rendering function from common project modules.
+
+    This prevents the app from crashing immediately if the function location
+    differs between versions.
+    """
+    for module_name in module_names:
+        try:
+            module = importlib.import_module(module_name)
+            func = getattr(module, function_name, None)
+            if callable(func):
+                return func
+        except Exception:
+            continue
+    return None
+
+
+def _render_default_pipeline_fallback() -> None:
+    """
+    Fallback for projects that use the six-panel panels.py layout instead of
+    separate image/text/audio branch functions.
+    """
+    try:
+        from panels import (
+            render_panel_1_upload,
+            render_panel_2_compression,
+            render_panel_3_encoding,
+            render_panel_4_experiment,
+            render_panel_5_decoding,
+            render_panel_6_analysis,
+        )
+
+        render_panel_1_upload()
+        render_panel_2_compression()
+        render_panel_3_encoding()
+        render_panel_4_experiment()
+        render_panel_5_decoding()
+        render_panel_6_analysis()
+    except Exception as exc:
+        st.error("Could not load the default six-panel pipeline.")
+        st.exception(exc)
+
+
+def render_image_branch() -> None:
+    func = _find_callable(
+        "render_image_branch",
+        ["panels", "image_panel", "image_branch", "tab_image", "image_compression_panel"],
+    )
+    if func is not None:
+        func()
+        return
+
+    st.info("Image branch function was not found. Showing the default pipeline instead.")
+    _render_default_pipeline_fallback()
+
+
+def render_text_branch() -> None:
+    func = _find_callable(
+        "render_text_branch",
+        ["panels", "text_panel", "text_branch", "tab_text", "text_compression_panel"],
+    )
+    if func is not None:
+        func()
+        return
+
+    st.warning(
+        "Text branch function was not found. "
+        "Please make sure render_text_branch() is available in one of your project modules."
+    )
+
+
+def render_audio_dna_storage_panel() -> None:
+    func = _find_callable(
+        "render_audio_dna_storage_panel",
+        ["panels", "audio_panel", "audio_branch", "tab_audio", "audio_dna_storage_panel"],
+    )
+    if func is not None:
+        func()
+        return
+
+    st.warning(
+        "Audio branch function was not found. "
+        "Please make sure render_audio_dna_storage_panel() is available in one of your project modules."
+    )
 
 
 def render_app() -> None:
@@ -341,14 +469,19 @@ def render_app() -> None:
     apply_app_style()
     _render_compact_overrides()
     _apply_pipeline_status_style()
+    _render_hero()
     _render_pipeline_status()
 
-    render_panel_1_upload()
-    render_panel_2_compression()
-    render_panel_3_encoding()
-    render_panel_4_experiment()
-    render_panel_5_decoding()
-    render_panel_6_analysis()
+    tab_image, tab_text, tab_audio = st.tabs(["🖼️ Image", "📝 Text", "🎧 Audio"])
+
+    with tab_image:
+        render_image_branch()
+
+    with tab_text:
+        render_text_branch()
+
+    with tab_audio:
+        render_audio_dna_storage_panel()
 
 
 if __name__ == "__main__":
